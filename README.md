@@ -1,2 +1,75 @@
 # Reply-bot-l
 Bot
+import os
+import telebot
+from openai import OpenAI
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("8803081285:AAHUAxPzS7IwXautsanjsSj1Lud5-Ne6vIk")
+XAI_API_KEY = os.getenv("XAI_API_KEY")
+
+bot = telebot.TeleBot(TELEGRAM_TOKEN)
+
+client = OpenAI(
+    api_key=XAI_API_KEY,
+    base_url="https://api.x.ai/v1"
+)
+
+chat_history = {}
+
+SYSTEM_PROMPT = """
+သင်သည် အကူအညီပေးတတ်သော၊ ရိုးသားသော၊ မြန်မာလို ပြောဆိုနိုင်သော AI assistant ဖြစ်သည်။
+အသုံးပြုသူကို ဖော်ရွေစွာ ပြန်ပြောပါ။
+"""
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.reply_to(
+        message,
+        "မင်္ဂလာပါ! ကျွန်တော်က Grok AI Bot ပါ။\nဘာမဆို မေးလိုက်ပါ။\n\n/clear - စကားပြောမှတ်တမ်း ဖျက်မယ်"
+    )
+
+@bot.message_handler(commands=['clear'])
+def clear_history(message):
+    user_id = message.from_user.id
+    if user_id in chat_history:
+        del chat_history[user_id]
+    bot.reply_to(message, "စကားပြောမှတ်တမ်း ဖျက်ပြီးပါပြီ။")
+
+@bot.message_handler(func=lambda message: True)
+def ai_reply(message):
+    user_id = message.from_user.id
+    user_text = message.text
+
+    bot.send_chat_action(message.chat.id, 'typing')
+
+    if user_id not in chat_history:
+        chat_history[user_id] = [
+            {"role": "system", "content": SYSTEM_PROMPT}
+        ]
+
+    chat_history[user_id].append({"role": "user", "content": user_text})
+
+    try:
+        response = client.chat.completions.create(
+            model="grok-4.6",
+            messages=chat_history[user_id],
+            temperature=0.7,
+            max_tokens=1024
+        )
+
+        ai_reply_text = response.choices[0].message.content
+        chat_history[user_id].append({"role": "assistant", "content": ai_reply_text})
+
+        if len(chat_history[user_id]) > 21:
+            chat_history[user_id] = [chat_history[user_id][0]] + chat_history[user_id][-20:]
+
+        bot.reply_to(message, ai_reply_text)
+
+    except Exception as e:
+        bot.reply_to(message, f"Error: {str(e)}")
+
+print("AI Bot စတင်နေပါတယ်...")
+bot.infinity_polling()
